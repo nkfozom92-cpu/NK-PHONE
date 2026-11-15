@@ -1,6 +1,7 @@
 package com.nk.phone;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.role.RoleManager;
 import android.Manifest;
 import android.content.Intent;
