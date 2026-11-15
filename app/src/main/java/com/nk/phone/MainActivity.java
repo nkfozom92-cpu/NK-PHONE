@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     }
 
     int dp(float n) {
-        return (int)(n * getResources().getDisplayMetrics().density);
+        return (int)(n * getResources().getDisplayMetrics().density * 0.92f);
     }
 
     GradientDrawable shape(int color, int radius) {
@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
     TextView text(String value, int size, int color) {
         TextView t = new TextView(this);
         t.setText(value);
-        t.setTextSize(size);
+        t.setTextSize(size * 0.96f);
         t.setTextColor(color);
         return t;
     }
@@ -107,6 +107,7 @@ public class MainActivity extends Activity {
     void buildShell() {
         root = vertical();
         root.setBackgroundColor(bg);
+        root.setPadding(0, dp(18), 0, 0);
 
         LinearLayout header = horizontal();
         header.setPadding(dp(20),dp(18),dp(20),dp(12));
