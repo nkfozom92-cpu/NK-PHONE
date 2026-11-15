@@ -11,6 +11,8 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.telecom.TelecomManager;
+import android.telecom.PhoneAccountHandle;
 import android.os.Bundle;
 import android.provider.CallLog;
 import android.provider.ContactsContract;
@@ -63,11 +65,14 @@ public class MainActivity extends Activity {
         if (checkSelfPermission(Manifest.permission.READ_CONTACTS)
                 != PackageManager.PERMISSION_GRANTED ||
             checkSelfPermission(Manifest.permission.READ_CALL_LOG)
+                != PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.READ_PHONE_STATE)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{
                 Manifest.permission.READ_CONTACTS,
                 Manifest.permission.READ_CALL_LOG,
-                Manifest.permission.CALL_PHONE
+                Manifest.permission.CALL_PHONE,
+                Manifest.permission.READ_PHONE_STATE
             }, 100);
         }
     }
@@ -478,21 +483,24 @@ public class MainActivity extends Activity {
         content.addView(t);
     }
 
+
+    EditText dialInput;
+
     void showKeypad() {
         TextView heading=text("Dial a number",23,dark);
         heading.setTypeface(null,Typeface.BOLD);
         heading.setPadding(0,dp(15),0,dp(20));
         content.addView(heading);
 
-        EditText input=new EditText(this);
-        input.setSingleLine(true);
-        input.setTextSize(25);
-        input.setGravity(Gravity.CENTER);
-        input.setHint("Enter phone number");
-        input.setInputType(3);
-        input.setTextColor(dark);
-        input.setBackground(shape(Color.WHITE,15));
-        content.addView(input,new LinearLayout.LayoutParams(-1,dp(58)));
+        dialInput=new EditText(this);
+        dialInput.setSingleLine(true);
+        dialInput.setTextSize(25);
+        dialInput.setGravity(Gravity.CENTER);
+        dialInput.setHint("Enter phone number");
+        dialInput.setInputType(3);
+        dialInput.setTextColor(dark);
+        dialInput.setBackground(shape(Color.WHITE,15));
+        content.addView(dialInput,new LinearLayout.LayoutParams(-1,dp(58)));
 
         String[][] keys={
             {"1","2","3"},{"4","5","6"},
@@ -502,38 +510,82 @@ public class MainActivity extends Activity {
         for(String[] r:keys) {
             LinearLayout row=horizontal();
             for(String k:r) {
-                Button b=new Button(this);
-                b.setText(k);
-                b.setTextSize(22);
-                b.setTextColor(dark);
-                b.setBackgroundTintList(
+                Button btn=new Button(this);
+                btn.setText(k);
+                btn.setTextSize(22);
+                btn.setTextColor(dark);
+                btn.setBackgroundTintList(
                     android.content.res.ColorStateList.valueOf(Color.WHITE)
                 );
-                b.setOnClickListener(v->input.append(k));
+                btn.setOnClickListener(v->dialInput.append(k));
                 LinearLayout.LayoutParams bp =
                     new LinearLayout.LayoutParams(0,dp(62),1);
                 bp.setMargins(dp(4),dp(4),dp(4),dp(4));
-                row.addView(b,bp);
+                row.addView(btn,bp);
             }
             content.addView(row);
         }
 
         Button call=new Button(this);
-        call.setText("☎   CALL");
+        call.setText("☎   CALL • CHOOSE SIM");
         call.setTextColor(Color.WHITE);
         call.setBackgroundTintList(
             android.content.res.ColorStateList.valueOf(green)
         );
-        call.setOnClickListener(v->makeCall(input.getText().toString()));
+        call.setOnClickListener(v->makeCall(dialInput.getText().toString()));
         content.addView(call,new LinearLayout.LayoutParams(-1,dp(55)));
+
+        Button save=new Button(this);
+        save.setText("＋   SAVE CONTACT");
+        save.setTextColor(Color.WHITE);
+        save.setBackgroundTintList(
+            android.content.res.ColorStateList.valueOf(purple)
+        );
+        save.setOnClickListener(v->saveContact(dialInput.getText().toString()));
+        content.addView(save,new LinearLayout.LayoutParams(-1,dp(52)));
 
         Button del=new Button(this);
         del.setText("⌫  DELETE");
         del.setOnClickListener(v->{
-            int n=input.length();
-            if(n>0) input.getText().delete(n-1,n);
+            int n=dialInput.length();
+            if(n>0) dialInput.getText().delete(n-1,n);
         });
         content.addView(del);
+    }
+
+    void saveContact(String phone) {
+        if(phone==null || phone.trim().isEmpty()) {
+            Toast.makeText(this,"আগে একটি নম্বর লিখুন",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        EditText nameInput=new EditText(this);
+        nameInput.setSingleLine(true);
+        nameInput.setHint("Contact name");
+        nameInput.setTextColor(dark);
+
+        new AlertDialog.Builder(this)
+            .setTitle("Save new contact")
+            .setMessage("নাম লিখুন: "+phone)
+            .setView(nameInput)
+            .setPositiveButton("Continue",(dialog,which)->{
+                String name=nameInput.getText().toString().trim();
+                if(name.isEmpty()) {
+                    Toast.makeText(this,"নাম লিখুন",Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                try {
+                    Intent intent=new Intent(Intent.ACTION_INSERT);
+                    intent.setType(ContactsContract.Contacts.CONTENT_TYPE);
+                    intent.putExtra(ContactsContract.Intents.Insert.NAME,name);
+                    intent.putExtra(ContactsContract.Intents.Insert.PHONE,phone.trim());
+                    startActivity(intent);
+                } catch(Exception e) {
+                    Toast.makeText(this,"Contacts app পাওয়া যায়নি",Toast.LENGTH_LONG).show();
+                }
+            })
+            .setNegativeButton("Cancel",null)
+            .show();
     }
 
     void makeCall(String phone) {
@@ -544,18 +596,62 @@ public class MainActivity extends Activity {
 
         if(checkSelfPermission(Manifest.permission.CALL_PHONE)
                 !=PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(
-                new String[]{Manifest.permission.CALL_PHONE},101
-            );
+            requestPermissions(new String[]{Manifest.permission.CALL_PHONE},101);
             return;
         }
 
         try {
-            Intent i=new Intent(
+            TelecomManager telecom=(TelecomManager)getSystemService(TELECOM_SERVICE);
+            java.util.List<PhoneAccountHandle> accounts =
+                telecom==null ? null : telecom.getCallCapablePhoneAccounts();
+
+            if(accounts==null || accounts.isEmpty()) {
+                placeCall(phone.trim(),null);
+                return;
+            }
+
+            if(accounts.size()==1) {
+                placeCall(phone.trim(),accounts.get(0));
+                return;
+            }
+
+            String[] labels=new String[accounts.size()];
+            for(int i=0;i<accounts.size();i++) {
+                android.telecom.PhoneAccount account =
+                    telecom.getPhoneAccount(accounts.get(i));
+                labels[i]=account!=null
+                    ? account.getLabel().toString()
+                    : "SIM "+(i+1);
+            }
+
+            new AlertDialog.Builder(this)
+                .setTitle("কোন SIM দিয়ে কল করবেন?")
+                .setItems(labels,(dialog,which)->
+                    placeCall(phone.trim(),accounts.get(which)))
+                .setNegativeButton("Cancel",null)
+                .show();
+
+        } catch(SecurityException e) {
+            Toast.makeText(this,
+                "SIM selection permission denied",
+                Toast.LENGTH_LONG).show();
+        } catch(Exception e) {
+            Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();
+        }
+    }
+
+    void placeCall(String phone,PhoneAccountHandle account) {
+        try {
+            Intent intent=new Intent(
                 Intent.ACTION_CALL,
-                Uri.fromParts("tel",phone.trim(),null)
+                Uri.fromParts("tel",phone,null)
             );
-            startActivity(i);
+            if(account!=null) {
+                intent.putExtra(
+                    TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE,account
+                );
+            }
+            startActivity(intent);
         } catch(Exception e) {
             Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();
         }
